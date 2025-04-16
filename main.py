@@ -11,6 +11,7 @@ https://github.com/yinguobing/head-pose-estimation
 from argparse import ArgumentParser
 
 import cv2
+import numpy as np
 
 from face_detection import FaceDetector
 from mark_detection import MarkDetector
@@ -24,7 +25,6 @@ parser.add_argument("--video", type=str, default=None,
 parser.add_argument("--cam", type=int, default=0,
                     help="The webcam index.")
 args = parser.parse_args()
-
 
 print(__doc__)
 print("OpenCV version: {}".format(cv2.__version__))
@@ -50,7 +50,8 @@ def run():
 
     # Setup a pose estimator to solve pose.
     pose_estimator = PoseEstimator(frame_width, frame_height)
-
+    all_landmarks = []
+    frame_count = 0
     # Measure the performance with a tick meter.
     tm = cv2.TickMeter()
 
@@ -61,11 +62,11 @@ def run():
         frame_got, frame = cap.read()
         if frame_got is False:
             break
-
+        frame_count += 1
         # If the frame comes from webcam, flip it so it looks like a mirror.
         if video_src == 0:
             frame = cv2.flip(frame, 2)
-
+        np_marks = np.full((68, 2), np.nan)  # For NumPy (68x2 filled with NaN)
         # Step 1: Get faces from current frame.
         faces, _ = face_detector.detect(frame, 0.7)
 
@@ -87,7 +88,7 @@ def run():
             marks *= (x2 - x1)
             marks[:, 0] += x1
             marks[:, 1] += y1
-
+            np_marks = marks.astype(float)  # 68x2 array
             # Step 3: Try pose estimation with 68 points.
             pose = pose_estimator.solve(marks)
 
@@ -107,7 +108,10 @@ def run():
 
             # Do you want to see the face bounding boxes?
             # face_detector.visualize(frame, faces)
-
+        else:
+            print(frame_count)
+        # Append to NumPy list (will transpose later)
+        all_landmarks.append(np_marks)
         # Draw the FPS on screen.
         cv2.rectangle(frame, (0, 0), (90, 30), (0, 0, 0), cv2.FILLED)
         cv2.putText(frame, f"FPS: {tm.getFPS():.0f}", (10, 20),
@@ -117,7 +121,10 @@ def run():
         cv2.imshow("Preview", frame)
         if cv2.waitKey(1) == 27:
             break
-
+    if all_landmarks:
+        # Stack frames along axis 1: shape becomes (68, num_frames, 2)
+        landmark_array = np.stack(all_landmarks, axis=1)
+        np.save('facial_landmarks.npy', landmark_array)
 
 if __name__ == '__main__':
     run()
